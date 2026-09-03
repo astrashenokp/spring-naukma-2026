@@ -17,7 +17,7 @@ public class SystemController {
 			int processors,
 			long ramTotalMb,
 			long ramFreeMb,
-			double cpuLoadPercent
+			double cpuLoad
 	) {}
 
 	@GetMapping("/system")
@@ -32,22 +32,8 @@ public class SystemController {
 				os.getAvailableProcessors(),
 				os.getTotalMemorySize() / mb,
 				os.getFreeMemorySize() / mb,
-				cpuLoadPercent(os)
+				os.getCpuLoad()
 		);
-	}
-
-	private double cpuLoadPercent(OperatingSystemMXBean os) {
-		double load = os.getCpuLoad();
-
-		// Windows не завжди дає завантаження системи (повертає -1),
-		// тоді рахуємо частку процесорного часу, спожиту застосунком
-		if (load < 0) {
-			double cpuTimeMs = os.getProcessCpuTime() / 1_000_000.0;
-			double uptimeMs = ManagementFactory.getRuntimeMXBean().getUptime();
-			load = cpuTimeMs / uptimeMs / os.getAvailableProcessors();
-		}
-
-		return Math.round(load * 1000) / 10.0;
 	}
 
 }
