@@ -16,8 +16,7 @@ public class SystemController {
 			String osArch,
 			int processors,
 			long ramTotalMb,
-			long ramFreeMb,
-			double cpuLoad
+			long ramFreeMb
 	) {}
 
 	@GetMapping("/system")
@@ -31,8 +30,7 @@ public class SystemController {
 				os.getArch(),
 				os.getAvailableProcessors(),
 				os.getTotalMemorySize() / mb,
-				os.getFreeMemorySize() / mb,
-				os.getCpuLoad()
+				os.getFreeMemorySize() / mb
 		);
 	}
 
