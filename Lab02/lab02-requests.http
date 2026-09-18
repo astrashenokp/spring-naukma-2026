@@ -1,0 +1,56 @@
+@base = http://localhost:8080/api/v1/teas
+
+### 1. Список
+GET {{base}}
+
+### 2. Створити чай
+# @name create
+POST {{base}}
+Content-Type: application/json
+
+{
+  "name": "Лун Цзін",
+  "type": "GREEN",
+  "originRegion": "Чжецзян, Китай",
+  "brewTemperatureC": 80,
+  "brewTimeSeconds": 120,
+  "supplierEmail": "supplier@teahouse.ua",
+  "harvestedOn": "2026-04-12"
+}
+
+### 3. Отримати створений
+GET {{create.response.headers.Location}}
+
+### 4. Оновити
+PUT {{create.response.headers.Location}}
+Content-Type: application/json
+
+{
+  "name": "Лун Цзін преміум",
+  "type": "GREEN",
+  "originRegion": "Чжецзян, Китай",
+  "brewTemperatureC": 75,
+  "brewTimeSeconds": 90,
+  "supplierEmail": "supplier@teahouse.ua",
+  "harvestedOn": "2026-04-12"
+}
+
+### 5. Видалити
+DELETE {{create.response.headers.Location}}
+
+### 6. Отримати видалений — буде 404
+GET {{create.response.headers.Location}}
+
+### 7. Неправильні дані — буде 400
+POST {{base}}
+Content-Type: application/json
+
+{
+  "name": "Ч",
+  "type": "GREEN",
+  "originRegion": "",
+  "brewTemperatureC": 130,
+  "brewTimeSeconds": 5,
+  "supplierEmail": "не-пошта",
+  "harvestedOn": "2030-04-12"
+}
