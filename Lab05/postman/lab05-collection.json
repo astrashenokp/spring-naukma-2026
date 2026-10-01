@@ -1,0 +1,37 @@
+{
+	"info": {
+		"name": "Lab05 Teas",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "GET teas returns trace id",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/v1/teas",
+					"host": ["{{baseUrl}}"],
+					"path": ["api", "v1", "teas"]
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test(\"Статус відповіді 200\", function () {",
+							"    pm.response.to.have.status(200);",
+							"});",
+							"",
+							"pm.test(\"Є заголовок X-Trace-Id\", function () {",
+							"    pm.response.to.have.header(\"X-Trace-Id\");",
+							"});"
+						]
+					}
+				}
+			]
+		}
+	]
+}
