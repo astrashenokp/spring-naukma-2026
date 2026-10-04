@@ -38,6 +38,9 @@
 | `logback-spring.xml` з `RollingFileAppender` і `%X{traceId:-}` у шаблоні | Застосунок стартує, файл `logs/....log` створюється й пишеться; поза запитом `traceId` — порожній рядок, не `null` і не помилка |
 | `springdoc-openapi-starter-webmvc-ui 2.8.5` на Boot 4.1.1 | Компілюється й запускається без правок; `/v3/api-docs` віддає `openapi: 3.1.0`, `@Schema(example = ...)` потрапляє у схему; `/swagger-ui/index.html` відповідає 200 |
 | Postman-колекція + `npx newman run` на реальному ендпоінті | Обидва тести (`status 200`, наявність заголовка) зелені |
+| Прив'язка `@ConfigurationProperties`-record з **додатковим** конструктором без аргументів | **Ламає прив'язку**: Spring бере конструктор без аргументів, і значення з `application.properties` (наприклад `trace-header=X-Req-Id`) тихо ігноруються. Тому конструктор без аргументів у record **не додаємо** — лишається тільки канонічний з `null`-захистом у компактному конструкторі |
+| `spring.jpa.hibernate.ddl-auto=validate` з **in-memory H2** | **Ламає запуск**: `Schema validation: missing table [probe]` — `validate` перевіряє існуючу схему, а в пам'яті вона порожня. Тому в `application-prod.properties` цього рядка **немає** |
+| `@AutoConfiguration` всередині пакета, який сканує `@SpringBootApplication` | Працює, але Spring Boot рекомендує виключати такі класи з component scan. Додаємо `@ComponentScan(excludeFilters = ...AutoConfiguration.class)` у головний клас — після цього всі тести зелені, `TraceIdFilter` підхоплюється через `AutoConfiguration.imports` |
 
 ---
 
@@ -50,10 +53,10 @@
 | 1 | `pom.xml`: `springdoc-openapi-starter-webmvc-ui` версії **2.8.5** (перевірено на Boot 4.1.1) |
 | 2 | `ObservabilityProperties` — `record` з `@ConfigurationProperties(prefix = "foodrescue.observability")`: `boolean traceIdEnabled` (типово `true`), `String traceHeader` (типово `"X-Trace-Id"`) |
 | 3 | `ObservabilityAutoConfiguration` — `@AutoConfiguration`, `@EnableConfigurationProperties(ObservabilityProperties.class)`, `@ConditionalOnProperty(prefix = "foodrescue.observability", name = "trace-id-enabled", havingValue = "true", matchIfMissing = true)`, один `@Bean` `TraceIdFilter` з `@ConditionalOnMissingBean` |
-| 4 | `TraceIdFilter` — `OncePerRequestFilter`: той самий код, що в індивідуальному завданні лекції 5 (`MDC.put`/`response.setHeader`/`finally { MDC.remove(...) }`), лише значення заголовка бере з `ObservabilityProperties.traceHeader()` |
+| 4 | `TraceIdFilter(String traceHeader)` — `OncePerRequestFilter`: той самий код, що в індивідуальному завданні лекції 5 (`MDC.put`/`response.setHeader`/`finally { MDC.remove(...) }`), але назву заголовка приймає в конструкторі (її дає `ObservabilityProperties.traceHeader()`) |
 | 5 | Файл `src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` з одним рядком — повним ім'ям класу `ObservabilityAutoConfiguration` |
 | 6 | `application-dev.properties`: `logging.level.com.example.foodrescue=DEBUG`, `spring.jpa.show-sql=true` (успадковано з №4) | 
-| 7 | `application-prod.properties`: `logging.level.root=INFO`, `spring.jpa.hibernate.ddl-auto=validate` (у проді схему більше не змінюємо автоматично) |
+| 7 | `application-prod.properties`: лише `logging.level.root=INFO`. Схему не чіпаємо: у in-memory H2 `validate` не працює (розділ 2) |
 | 8 | `logback-spring.xml` у корені ресурсів (розділ 5) |
 | 9 | `SensitiveDataMasker` — утилітний клас у `common` (розділ 6) |
 | 10 | `ApplicationModulesTest`/`ModulesTest` і наявні тести лишаються зеленими: нова автоконфігурація лежить прямо в `common`, підпакетів не створюємо |
@@ -80,9 +83,17 @@ public record ObservabilityProperties(boolean traceIdEnabled, String traceHeader
             traceHeader = "X-Trace-Id";
         }
     }
+}
+```
 
-    public ObservabilityProperties() {
-        this(true, "X-Trace-Id");
+Головний клас (`FoodRescueApplication`) — з виключенням автоконфігурацій із component scan:
+
+```java
+@SpringBootApplication
+@ComponentScan(excludeFilters = @ComponentScan.Filter(type = FilterType.ANNOTATION, classes = AutoConfiguration.class))
+public class FoodRescueApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(FoodRescueApplication.class, args);
     }
 }
 ```
@@ -119,7 +130,6 @@ spring.jpa.show-sql=true
 ```properties
 # application-prod.properties
 logging.level.root=INFO
-spring.jpa.hibernate.ddl-auto=validate
 ```
 
 Запуск: `./mvnw spring-boot:run -Dspring-boot.run.profiles=dev` (або `prod`). Без прапорця лишається дефолтний `application.properties` з №4.
