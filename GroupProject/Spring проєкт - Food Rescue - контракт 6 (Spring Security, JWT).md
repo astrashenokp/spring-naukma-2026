@@ -6,7 +6,7 @@
 
 **Вихідна точка — код, зроблений за контрактом №5 і злитий у `main`.** Усе з №2-№5 лишається. Це завдання додає автентифікацію й авторизацію над готовим API — ендпоінти, DTO й бізнес-логіка не змінюються, окрім одного рядка `@PreAuthorize` на кожному методі, що міняє дані.
 
-> Лектор сам сказав наприкінці лекції: «завдання поки що не буде відкрите, я внесу деякі правки і так само додам приклад». Перш ніж починати — перевірити на distedu, чи з'явилася уточнена версія й приклад. Нижче — те, що є на слайдах і підтверджено на прототипі; якщо уточнена версія відрізнятиметься в дрібницях, структура (JWT + ролі + `ProblemDetail`) зміниться мало.
+> Лектор сам сказав наприкінці лекції: «завдання поки що не буде відкрите, я внесу деякі правки і так само додам приклад». Приклад (`example_project`, пакет `com.ukma.cctv`) уже з'явився й перевірений — розділи нижче оновлено під нього. Структура (JWT + ролі + `ProblemDetail`) співпадає зі слайдами; розбіжності — у деталях реалізації фільтрів і `ObjectMapper`, усі перелічені в розділі 2.
 
 ---
 
@@ -30,18 +30,22 @@
 
 ## 2. Що перевірено на робочому прикладі
 
-Усе нижче відтворено на прототипі (Boot 4.1.1, Java 25, JPA + H2, Spring Security 7.1.1) перед тим, як потрапити в контракт. Три пункти — речі, про які лекція **не попередила**, і без яких код не збирається або падає в рантаймі.
+Усе нижче відтворено на прототипі (Boot 4.1.1, Java 25, JPA + H2, Spring Security 7.1.1) і зіставлено з офіційним `example_project` лектора (пакет `com.ukma.cctv`), перш ніж потрапити в контракт. Перелічені пункти — речі, про які ні слайди, ні приклад лектора **не попереджають прямо**, і без яких код не збирається або падає в рантаймі.
 
 | Що | Результат |
 |----|-----------|
-| `Argon2PasswordEncoder` (приклад зі слайда 32) | **Падає в рантаймі** з `NoClassDefFoundError: org.bouncycastle...`, якщо в `pom.xml` немає окремо доданого `org.bouncycastle:bcprov-jdk18on`. Spring Security сам цю залежність не тягне |
-| `ObjectMapper` для ручного `ProblemDetail` (приклад зі слайдів 90-92) | У Spring Boot **4.1** власний `ObjectMapper`, яким реально користується застосунок, — це вже **Jackson 3** (`tools.jackson.databind.ObjectMapper`), а не класичний `com.fasterxml.jackson.databind.ObjectMapper`, який показано на слайдах. Класичний Jackson є в проєкті лише транзитивно (через `jjwt-jackson`) і лише в `runtime`-області — в коді він не компілюється. Імпортувати треба `tools.jackson.databind.ObjectMapper` |
-| `@WebMvcTest` + Spring Security (приклад зі слайда 96) | У Boot 4.1 модульні тестові jar-и **не** підключають Spring Security до `MockMvc` автоматично (на відміну від того, що показано на слайді). Треба самому зібрати `MockMvc`: `MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build()` у `@BeforeEach`, через `@Autowired WebApplicationContext`, а не покладатися на автоін'єктований `MockMvc` |
-| `@MockitoBean` на самому класі `JwtAuthenticationFilter` | **Тиха помилка**: мок фільтра не викликає `filterChain.doFilter(...)`, увесь запит обривається, і тест бачить `200` замість очікуваного статусу — без жодного винятку. Мокати треба лише залежності фільтра (`JwtService`, `UserDetailsService`), а сам фільтр — імпортувати як є |
-| `@Component`-фільтр (`JwtAuthenticationFilter`) у довільному `@WebMvcTest` | Такий фільтр **автоматично підхоплюється** в будь-якому `@WebMvcTest`-зрізі проєкту (на відміну від `@Service`/`@Repository`) і провалює створення контексту, якщо його залежності (`JwtService`, `UserDetailsService`) нема чим задовольнити. Кожен наявний `@WebMvcTest` у проєкті (контролери з №2-№5) після цього злиття **зламається**, якщо не додати туди `@MockitoBean JwtService jwtService` і `@MockitoBean UserDetailsService userDetailsService` |
-| Той самий `@WebMvcTest` **без** `@Import(SecurityConfig.class)` і без ручного `springSecurity()` | Якщо додати лише два `@MockitoBean` вище (без інших змін), наявний тест далі бачить **200**, як і раніше — повноцінна перевірка авторизації (401/403) вмикається лише там, де її явно імпортують |
-| `AuthenticationManager` як бін | У сучасному Spring Security він **не** піднімається автоматично для `@Autowired`; треба явно `@Bean AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) { return cfg.getAuthenticationManager(); }` |
-| Повний сценарій: без токена → логін → `Bearer` → чужа роль | Усі чотири статуси (`401`/`200`(токен)/`200`/`403`) відтворені реальними запитами, обидва `ProblemDetail` (401 і 403) мають очікувану форму (`type`/`title`/`detail`/`status`/`instance`) |
+| `Argon2PasswordEncoder` (слайд 32) | **Падає в рантаймі** з `NoClassDefFoundError: org.bouncycastle...`, якщо в `pom.xml` немає окремо доданого `org.bouncycastle:bcprov-jdk18on`. Spring Security сам цю залежність не тягне. Підтверджено й офіційним прикладом — у його `pom.xml` ця ж залежність є |
+| Один REST-ендпоінт логіну (`AuthController`) чи два фільтри? | Слайди (п. R6 — «фільтри», множина) і офіційний приклад сходяться на **двох фільтрах**: `JwtLoginFilter extends UsernamePasswordAuthenticationFilter` (сам логін) + `JwtAuthenticationFilter` (перевірка `Bearer`-токена на решті запитів), а не окремий `@RestController` для логіну. Контракт нижче (розділ 4) переведено на цю схему |
+| Один `JwtService` на все чи два сервіси? | Офіційний приклад розділяє генерацію і валідацію токена на `JwtService` (видає токен) і `JwtValidatorService` (парсить/перевіряє) — так само, як на слайдах 66-71. Контракт нижче розділено на два |
+| `AntPathRequestMatcher` у `JwtLoginFilter` (є навіть в офіційному прикладі лектора) | Цей клас **прибрано** зі Spring Security 7.1.1 — `cannot find symbol` навіть у коді самого лектора проти поточних версій залежностей. Заміна на `PathPatternRequestMatcher.pathPattern(...)` **компілюється, але мовчки не працює** (`attemptAuthentication` просто не викликається — цей matcher потребує контексту розбору шляху з `DispatcherServlet`, якого ще нема на рівні фільтра безпеки). Перевірена робоча заміна — `RegexRequestMatcher.regexMatcher(HttpMethod.POST, "/api/v1/auth/login")` |
+| `ObjectMapper` для ручного `ProblemDetail` (слайди 90-92) | У Spring Boot 4.1 автоконфігурований `ObjectMapper` застосунку — це вже Jackson 3 (`tools.jackson.databind.ObjectMapper`), а не класичний `com.fasterxml.jackson.databind.ObjectMapper` зі слайдів. Класичний Jackson сам по собі тягнеться лише транзитивно через `jjwt-jackson` і лише в `runtime`-області. **Але**: офіційний приклад додає `spring-boot-starter-jackson` і власний бін `JacksonConfig { ObjectMapper objectMapper() { return new ObjectMapper(); } }`, а в нашому проєкті вже є `springdoc-openapi` з №5 — вона сама тягне класичний `jackson-databind` у `compile`-області (Maven nearest-wins). Тобто класичний підхід лектора в нашому проєкті теж компілюється і працює — контракт нижче перейшов на нього для максимальної відповідності прикладу |
+| `.setProperty("instance", ...)` у `ProblemDetail` (так само в офіційному прикладі лектора) | Дає **вкладений** `"properties":{"instance":"..."}`, а не плаский `"instance":"..."` top-level поле, якщо `ObjectMapper` — ручний (не автоконфігурований Boot'ом, як у нашому `JacksonConfig`). Правильно — викликати власний метод `ProblemDetail.setInstance(URI.create(...))`, він серіалізується пласким полем незалежно від того, який `ObjectMapper` активний. Це баг навіть у коді самого лектора — у контракті виправлено |
+| `@WebMvcTest` + Spring Security (слайд 96) | У Boot 4.1 модульні тестові jar-и **не** підключають Spring Security до `MockMvc` автоматично. Треба самому зібрати `MockMvc`: `MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build()` у `@BeforeEach`, через `@Autowired WebApplicationContext` |
+| `@MockitoBean` на самому класі `JwtAuthenticationFilter` | **Тиха помилка**: мок фільтра не викликає `filterChain.doFilter(...)`, увесь запит обривається, тест бачить `200` без жодного винятку. Мокати треба лише залежності фільтра (`JwtValidatorService`, `UserDetailsService`), а сам фільтр — імпортувати як є |
+| `@Component`-фільтр (`JwtAuthenticationFilter`) у довільному `@WebMvcTest` | Автоматично підхоплюється в будь-якому `@WebMvcTest`-зрізі проєкту (на відміну від `@Service`/`@Repository`) і провалює створення контексту, якщо його залежності нема чим задовольнити. Кожен наявний `@WebMvcTest` (контролери з №2-№5) після злиття бази **зламається**, якщо не додати туди `@MockitoBean` на `JwtValidatorService` і `UserDetailsService` |
+| `AuthenticationManager` як бін | У сучасному Spring Security не піднімається автоматично для `@Autowired`; треба явно `@Bean AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) { return cfg.getAuthenticationManager(); }` |
+| Перевірка вручну (curl) одразу після "Started..." у логах | Spring Boot друкує рядок `Started XApplication in N seconds` **до** того, як виконає `ApplicationRunner`-и (`DemoUsers` тощо) — тільки після нього. Скрипт/curl, запущений одразу по цьому рядку, може «не бачити» ще не створених демо-користувачів і дати хибний `401`. Чекати варто на власний лог-маркер з самого `ApplicationRunner`, а не на "Started" |
+| Повний сценарій: без токена → логін → `Bearer` → чужа роль, з усіма виправленнями вище | Усі чотири статуси (`401`/`200`(токен)/`200`/`403`) відтворені реальними запитами, обидва `ProblemDetail` (401 і 403) — плаский `instance`, без зайвого `"properties":null` (додано `setSerializationInclusion(NON_NULL)` у `JacksonConfig`, як і в контракті №2) |
 
 ---
 
@@ -58,14 +62,15 @@
 | 5 | `JpaUserDetailsService implements UserDetailsService` — `loadUserByUsername` кидає `UsernameNotFoundException`, якщо немає запису |
 | 6 | `PasswordEncoderConfig` — бін `Argon2PasswordEncoder(16, 32, 1, 16384, 3)` (параметри зі слайда 32) + один `ApplicationRunner`, що виводить приклад хеша в лог при старті (R2) |
 | 7 | `DemoUsers` — `ApplicationRunner`, що створює 4 демо-акаунти (по одному на роль) із фіксованими `UUID`, якщо їх ще нема — той самий принцип, що `DemoData` з №2 |
-| 8 | `JwtService` — генерація й валідація токена (розділ 4.2) |
-| 9 | `JwtAuthenticationFilter` — `OncePerRequestFilter`, читає `Authorization: Bearer`, валідує, ставить `SecurityContextHolder` |
-| 10 | `ProblemDetailAuthenticationEntryPoint` і `ProblemDetailAccessDeniedHandler` — `ProblemDetail` у тому самому форматі, що `GlobalExceptionHandler` з №2 (`type = https://api.foodrescue.local/errors/unauthorized` і `.../forbidden`) |
-| 11 | `SecurityConfig` — `@EnableWebSecurity @EnableMethodSecurity`, `SecurityFilterChain` (розділ 4.1), `CorsConfigurationSource`, бін `AuthenticationManager` |
-| 12 | `AuthController` — `POST /api/v1/auth/login` (розділ 4.3) |
-| 13 | `OpenApiConfig` з №5 — додати схему `BearerAuth`, щоб кнопка «Authorize» у Swagger UI працювала (слайд 85) |
-| 14 | `postman/food-rescue-collection.json` з №5 — додати крок логіну на початок і заголовок `Authorization: Bearer {{accessToken}}` на решту запитів (розділ 6) — інакше колекція з №5 почне падати з 401 |
-| 15 | README: скелет розділу «Безпека» (розділ 7) |
+| 8 | `JacksonConfig` — бін класичного `com.fasterxml.jackson.databind.ObjectMapper` з `setSerializationInclusion(NON_NULL)` (розділ 2) |
+| 9 | `JwtService` — генерація токена, і окремо `JwtValidatorService` — парсинг/перевірка (розділ 4.2) |
+| 10 | `JwtAuthenticationFilter` — `OncePerRequestFilter`, читає `Authorization: Bearer`, валідує через `JwtValidatorService`, ставить `SecurityContextHolder` |
+| 11 | `JwtLoginFilter extends UsernamePasswordAuthenticationFilter` — сам логін, `POST /api/v1/auth/login` (розділ 4.3) |
+| 12 | `ProblemDetailAuthenticationEntryPoint` і `ProblemDetailAccessDeniedHandler` — `ProblemDetail` через `.setInstance(...)` (не `.setProperty("instance", ...)` — розділ 2), у тому самому форматі, що `GlobalExceptionHandler` з №2 (`type = https://api.foodrescue.local/errors/unauthorized` і `.../forbidden`) |
+| 13 | `SecurityConfig` — `@EnableWebSecurity @EnableMethodSecurity`, `SecurityFilterChain` з двома фільтрами (розділ 4.1), `CorsConfigurationSource`, бін `AuthenticationManager` |
+| 14 | `OpenApiConfig` з №5 — додати схему `BearerAuth`, щоб кнопка «Authorize» у Swagger UI працювала (слайд 85) |
+| 15 | `postman/food-rescue-collection.json` з №5 — додати крок логіну на початок і заголовок `Authorization: Bearer {{accessToken}}` на решту запитів (розділ 6) — інакше колекція з №5 почне падати з 401 |
+| 16 | README: скелет розділу «Безпека» (розділ 7) |
 
 **Готово, коли:** `./mvnw test` зелений (з урахуванням правок з розділу 5.3 у наявних тестах); застосунок стартує; у логах видно приклад хеша Argon2id; `POST /api/v1/auth/login` з демо-акаунтом повертає токен; захищений ендпоінт без токена повертає `401` у форматі `ProblemDetail`.
 
@@ -97,9 +102,15 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
+            AuthenticationManager authenticationManager,
+            JwtService jwtService,
+            ObjectMapper objectMapper,
             JwtAuthenticationFilter jwtFilter,
             ProblemDetailAuthenticationEntryPoint authEntryPoint,
             ProblemDetailAccessDeniedHandler accessDeniedHandler) throws Exception {
+
+        JwtLoginFilter jwtLoginFilter = new JwtLoginFilter(authenticationManager, jwtService, objectMapper, authEntryPoint);
+
         return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -111,7 +122,15 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAt(jwtLoginFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
+    }
+
+    @Bean
+    public FilterRegistrationBean<JwtAuthenticationFilter> jwtAuthenticationFilterRegistration(JwtAuthenticationFilter filter) {
+        FilterRegistrationBean<JwtAuthenticationFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean
@@ -135,7 +154,9 @@ public class SecurityConfig {
 
 `authorizeHttpRequests` навмисно **грубий**: лише «відкрито» (логін, документація) чи «потрібен будь-який валідний токен». Хто саме може викликати конкретний метод — вирішує `@PreAuthorize` на сервісі (розділ 5), а не URL-правило тут. Це єдиний спосіб, щоб троє людей могли додавати свої правила авторизації, не чіпаючи один спільний файл і не отримуючи конфліктів злиття.
 
-### 4.2. `JwtService` і секрет
+`jwtAuthenticationFilterRegistration` зі `setEnabled(false)` — страхування від того, що Spring Boot сам ще раз зареєструє `@Component`-фільтр на рівні контейнера сервлетів, окремо від ланцюжка безпеки (так само робить і офіційний приклад лектора). Без цього біна помилки не буде (`OncePerRequestFilter` сам захищається від повторного виконання), але залишаємо для відповідності прикладу.
+
+### 4.2. `JwtService`, `JwtValidatorService` і секрет
 
 ```java
 @Service
@@ -150,9 +171,22 @@ public class JwtService {
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expirationMillis = expirationMinutes * 60 * 1000;
     }
-    // generateToken / extractUsername / isTokenValid — як на слайдах 66-71, перевірено без змін
+    // generateToken, getExpirationMillis — як на слайдах 66-69, перевірено без змін
+}
+
+@Service
+public class JwtValidatorService {
+
+    private final SecretKey signingKey;
+
+    public JwtValidatorService(@Value("${security.jwt.secret}") String secret) {
+        this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+    }
+    // extractAllClaims, extractUsername, isTokenValid — як на слайдах 70-71, перевірено без змін
 }
 ```
+
+Генерацію і валідацію розділено на два сервіси — так само, як на слайдах і в офіційному прикладі лектора (а не один `JwtService` на все).
 
 ```properties
 security.jwt.secret=${JWT_SECRET:change-me-dev-only-food-rescue-secret-32-bytes-min}
@@ -161,28 +195,57 @@ security.jwt.expiration-minutes=15
 
 Слайд 69 прямо називає типову помилку: «зберігати секретні ключі у відкритому вигляді у файлах конфігурації репозиторію». Значення за замовчуванням тут — явно позначений **dev-заповнювач** (і довший за мінімум 32 байти для HMAC-SHA, інакше `WeakKeyException`), а реальне значення для демонстрації викладачу можна передати змінною середовища `JWT_SECRET`, нічого не комітячи. Для самої здачі досить і заповнювача — це студентський проєкт, не прод.
 
-### 4.3. `AuthController`
+### 4.3. `JwtLoginFilter`
+
+Не окремий `@RestController`, а фільтр — підміняє стандартний `UsernamePasswordAuthenticationFilter` на шляху логіну (R6 — «фільтри», множина; так само в офіційному прикладі лектора):
 
 ```java
-@RestController
-@RequestMapping("/api/v1/auth")
-public class AuthController {
+public class JwtLoginFilter extends UsernamePasswordAuthenticationFilter {
 
-    private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final ObjectMapper objectMapper;
+    private final AuthenticationEntryPoint authenticationEntryPoint;
 
-    @PostMapping("/login")
-    public AuthResponse login(@RequestBody LoginRequest request) {
-        Authentication authentication = authenticationManager.authenticate(
-                UsernamePasswordAuthenticationToken.unauthenticated(request.username(), request.password()));
-        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+    public JwtLoginFilter(AuthenticationManager authenticationManager, JwtService jwtService,
+            ObjectMapper objectMapper, AuthenticationEntryPoint authenticationEntryPoint) {
+        super(authenticationManager);
+        this.jwtService = jwtService;
+        this.objectMapper = objectMapper;
+        this.authenticationEntryPoint = authenticationEntryPoint;
+        setRequiresAuthenticationRequestMatcher(
+                RegexRequestMatcher.regexMatcher(HttpMethod.POST, "/api/v1/auth/login"));
+    }
+
+    @Override
+    public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response)
+            throws AuthenticationException {
+        LoginRequest loginRequest = objectMapper.readValue(request.getInputStream(), LoginRequest.class);
+        var authRequest = UsernamePasswordAuthenticationToken.unauthenticated(
+                loginRequest.username(), loginRequest.password());
+        return getAuthenticationManager().authenticate(authRequest);
+    }
+
+    @Override
+    protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response,
+            FilterChain chain, Authentication authResult) throws IOException {
+        UserDetails userDetails = (UserDetails) authResult.getPrincipal();
         String token = jwtService.generateToken(userDetails);
-        return AuthResponse.of(token, jwtService.getExpirationMillis() / 1000);
+        AuthResponse authResponse = AuthResponse.of(token, jwtService.getExpirationMillis() / 1000);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        objectMapper.writeValue(response.getWriter(), authResponse);
+    }
+
+    @Override
+    protected void unsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response,
+            AuthenticationException failed) throws IOException {
+        authenticationEntryPoint.commence(request, response, failed);
     }
 }
 ```
 
-Невірний пароль чи неіснуючий логін → `AuthenticationManager.authenticate` сам кидає `BadCredentialsException`/`UsernameNotFoundException`; їх ловить `ProblemDetailAuthenticationEntryPoint` так само, як і 401 на захищеному ресурсі (перевірено: обидва випадки дають однаковий формат `ProblemDetail`).
+**Важливо (перевірено, розділ 2):** `setRequiresAuthenticationRequestMatcher` — не `AntPathRequestMatcher` (прибрано зі Spring Security 7.1.1, навіть у коді лектора не компілюється) і не `PathPatternRequestMatcher` (компілюється, але мовчки не спрацьовує на цьому рівні). Робочий варіант — `RegexRequestMatcher.regexMatcher(HttpMethod.POST, "/api/v1/auth/login")`.
+
+Невірний пароль чи неіснуючий логін → `AuthenticationManager.authenticate` сам кидає `BadCredentialsException`/`UsernameNotFoundException`, їх ловить `unsuccessfulAuthentication` → той самий `ProblemDetailAuthenticationEntryPoint`, що й 401 на захищеному ресурсі (перевірено: обидва випадки дають однаковий формат `ProblemDetail`).
 
 ---
 
@@ -204,14 +267,17 @@ public class AuthController {
 
 ### 5.2. Обов'язкове виправлення наявних `@WebMvcTest` (перевірено — без нього тести не збираються)
 
-Як тільки база злита в `main`, у **кожному** наявному `@WebMvcTest` (з №2-№5, для своїх контролерів) треба додати два рядки — інакше тест впаде ще на етапі підняття контексту (розділ 2):
+Як тільки база злита в `main`, у **кожному** наявному `@WebMvcTest` (з №2-№5, для своїх контролерів) треба додати три поля — інакше тест впаде ще на етапі підняття контексту (розділ 2):
 
 ```java
 @MockitoBean
-private JwtService jwtService;
+private JwtValidatorService jwtValidatorService;
 
 @MockitoBean
 private UserDetailsService userDetailsService;
+
+@MockitoBean
+private AuthenticationEntryPoint authenticationEntryPoint;
 ```
 
 Більше нічого в цих тестах міняти не треба: без `@Import(SecurityConfig.class)` і без ручної збірки `MockMvc` вони й далі бачать ті самі статуси, що й раніше (перевірено).
@@ -227,7 +293,7 @@ class LotControllerSecurityTest {
     @Autowired WebApplicationContext context;
     MockMvc mockMvc;
 
-    @MockitoBean JwtService jwtService;
+    @MockitoBean JwtValidatorService jwtValidatorService;
     @MockitoBean UserDetailsService userDetailsService;
     @MockitoBean LotService lotService;
 
@@ -335,7 +401,8 @@ npx newman run postman/food-rescue-collection.json -e postman/food-rescue-enviro
 
 - `Refresh Token` і його ротацію (слайди 61-63) — лекція згадує це як продакшн-патерн, не як вимогу завдання; тільки короткоживучий `access token`;
 - `Scoped Values` (слайди 15-19) — для Java 25/віртуальних потоків; наш застосунок працює на звичайних потоках Tomcat, `SecurityContextHolder` з режимом за замовчуванням (`ThreadLocal`) не створює жодної проблеми при нашому навантаженні;
-- `Session Fixation`/`HttpSessionEventPublisher`/обмеження одночасних сесій (слайди 48-51) — це про сесійну модель, а наш груповий API безсесійний (`STATELESS`);
+- `Session Fixation`/`HttpSessionEventPublisher`/обмеження одночасних сесій (слайди 48-51) — це про сесійну модель, а наш груповий API безсесійний (`STATELESS`). Офіційний приклад лектора має такий другий `SecurityFilterChain` (`@Order(1)`, окремо на `/session/**`) — це явно матеріал іншої (пізнішої) лекції, у нашому прикладі він не підключений до жодного ендпоінта з ТЗ і в контракт не йде;
+- `SecurityScopeRunner`/`ScopedValue`-демонстрацію з прикладу лектора — перевірено (`grep`), що цей клас ніде не підключений до реального флоу автентифікації, мертвий демо-код; не копіюємо;
 - `OAuth 2.0`, `PKCE`, `Passkeys`, `SSO` (слайди 99-103) — лектор прямо назвав це «перспективами розвитку», не завданням;
 - `GraalVM Native Image` (слайд 104) — не наш стек;
 - маскування токена в логах окремим перетворювачем Logback — простіше правило (розділ 10): токен ніде не логуємо, крім самого значення в тілі відповіді `/login`;
@@ -347,12 +414,13 @@ npx newman run postman/food-rescue-collection.json -e postman/food-rescue-enviro
 
 | Ризик | Що робити |
 |-------|-----------|
-| Усі наявні `@WebMvcTest` червоніють одразу після злиття бази | Очікувано (розділ 2, 5.2) — додати два `@MockitoBean` в кожен, нічого більше не міняти |
+| Усі наявні `@WebMvcTest` червоніють одразу після злиття бази | Очікувано (розділ 2, 5.2) — додати три `@MockitoBean` в кожен (розділ 5.2), нічого більше не міняти |
 | Postman-колекція з №5 раптом усюди 401 | Додати крок логіну на початок (розділ 6) — без цього й раніше зелена колекція тепер провалиться |
 | `Argon2PasswordEncoder` падає при старті з `NoClassDefFoundError` | Забули `bcprov-jdk18on` у `pom.xml` (розділ 2, 3 крок 1) |
 | У логах чи в токені — пароль, персональні дані | Заборонено (слайд 60, 106); у payload JWT — лише `username` і ролі |
-| Лектор відкриє уточнену версію завдання з прикладом | Перевірити на distedu до старту; структура (JWT + ролі + `ProblemDetail`) малоймовірно зміниться, бо збігається зі слайдами |
-| Хтось скопіював приклад `ObjectMapper` зі слайда й отримав помилку компіляції | Імпортувати `tools.jackson.databind.ObjectMapper`, не `com.fasterxml...` (розділ 2) |
+| Хтось скопіював `AntPathRequestMatcher` зі слайда чи з прикладу лектора — помилка компіляції | Використовувати `RegexRequestMatcher.regexMatcher(HttpMethod.POST, "...")` (розділ 2, 4.3); `PathPatternRequestMatcher` компілюється, але мовчки ламає логін |
+| Ручна перевірка curl одразу після рядка `Started...` у логах дає хибний 401 | `ApplicationRunner` (демо-користувачі) виконується **після** цього рядка (розділ 2) — почекати секунду-дві або власний лог-маркер |
+| `ProblemDetail` повертає `"instance":null` і вкладений `"properties":{"instance":...}` | Використати `.setInstance(URI.create(...))`, не `.setProperty("instance", ...)` (розділ 2, 4.1 — це баг навіть у прикладі лектора) |
 
 ---
 
@@ -360,7 +428,7 @@ npx newman run postman/food-rescue-collection.json -e postman/food-rescue-enviro
 
 | Коли | Хто | Що |
 |------|-----|----|
-| Зараз | разом | Домовитися, хто Людина 1, 2, 3 (як і в №3-№5). Прочитати розділи 3-6. Перевірити на distedu, чи завдання вже відкрите й чи є приклад від лектора |
+| Зараз | разом | Домовитися, хто Людина 1, 2, 3 (як і в №3-№5). Прочитати розділи 3-6. Перевірити на distedu, чи завдання вже відкрите (приклад лектора вже враховано в контракті) |
 | До старту (~2-2.5 год) | Людина 1 | База: розділ 3, одним злиттям у `main`. Людина 2 і 3 читають і готують, яке `@PreAuthorize`-правило й який тест авторизації будуть їхніми |
 | Основна частина (~2 год) | кожен окремо | Виправити свої наявні `@WebMvcTest` (розділ 5.2), додати `@PreAuthorize` у своєму сервісі (розділ 5.1), написати новий тест авторизації (розділ 5.3), розділ README |
 | Перед здачею (~30 хв) | разом | Злити все в `main`; оновити Postman-колекцію (розділ 6); пройти розділ 8 повністю на розпакованому архіві |
