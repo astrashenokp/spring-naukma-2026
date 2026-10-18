@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="uk">
+<head>
+	<meta charset="UTF-8">
+	<title>Додати чай</title>
+</head>
+<body>
+	<h2>Додати чай</h2>
+	<form th:action="@{/teas}" th:object="${form}" method="post">
+		<div>
+			<label for="name">Назва</label>
+			<input type="text" id="name" th:field="*{name}"/>
+			<div th:if="${#fields.hasErrors('name')}" th:errors="*{name}">Помилка назви</div>
+		</div>
+		<div>
+			<label for="teaType">Тип чаю</label>
+			<input type="text" id="teaType" th:field="*{teaType}"/>
+			<div th:if="${#fields.hasErrors('teaType')}" th:errors="*{teaType}">Помилка типу</div>
+		</div>
+		<button type="submit">Зберегти</button>
+	</form>
+</body>
+</html>

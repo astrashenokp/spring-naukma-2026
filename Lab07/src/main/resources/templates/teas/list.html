@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+	  xmlns:sec="http://www.thymeleaf.org/extras/spring-security" lang="uk">
+<head>
+	<meta charset="UTF-8">
+	<title>Чайний каталог</title>
+</head>
+<body>
+	<p>Користувач: <span sec:authentication="name">user</span></p>
+	<form th:action="@{/logout}" method="post">
+		<button type="submit">Вийти</button>
+	</form>
+
+	<h2>Каталог чаю</h2>
+	<a sec:authorize="hasRole('ADMIN')" th:href="@{/teas/new}">Додати чай</a>
+
+	<table border="1">
+		<thead>
+			<tr><th>#</th><th>Назва</th><th>Тип</th></tr>
+		</thead>
+		<tbody>
+			<tr th:each="tea : ${teas}">
+				<td th:text="${tea.id}">1</td>
+				<td th:text="${tea.name}">Да Хун Пао</td>
+				<td th:text="${tea.teaType}">OOLONG</td>
+			</tr>
+		</tbody>
+	</table>
+</body>
+</html>
