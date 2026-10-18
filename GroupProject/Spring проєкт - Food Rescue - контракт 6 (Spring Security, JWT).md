@@ -1,6 +1,6 @@
 # Food Rescue — контракт №6: Spring Security, JWT
 
-> **Актуальний контракт** (останній). Попередні №3-№5 лишаються чинними для своїх частин, але цей документ має пріоритет там, де вони розходяться.
+> Замінено контрактом №7 (Thymeleaf, вебінтерфейс) як останнім. Цей документ лишається чинним для JWT-частини (REST API під `/api/**`); єдиний `SecurityFilterChain` з розділу 4.1 у №7 розділяється на два.
 
 Групове завдання лекції 6 (Spring Security). Тут записано **лише те, що вимагає викладач**, і те, що технічно потрібно, щоб це працювало. Усе, що не згадане нижче, не робимо.
 
@@ -237,7 +237,7 @@ public class JwtLoginFilter extends UsernamePasswordAuthenticationFilter {
 
     @Override
     protected void unsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response,
-            AuthenticationException failed) throws IOException {
+            AuthenticationException failed) throws IOException, ServletException {
         authenticationEntryPoint.commence(request, response, failed);
     }
 }
