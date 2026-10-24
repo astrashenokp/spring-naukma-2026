@@ -40,9 +40,9 @@
 | `AntPathRequestMatcher` у `JwtLoginFilter` (є навіть в офіційному прикладі лектора) | Цей клас **прибрано** зі Spring Security 7.1.1 — `cannot find symbol` навіть у коді самого лектора проти поточних версій залежностей. Заміна на `PathPatternRequestMatcher.pathPattern(...)` **компілюється, але мовчки не працює** (`attemptAuthentication` просто не викликається — цей matcher потребує контексту розбору шляху з `DispatcherServlet`, якого ще нема на рівні фільтра безпеки). Перевірена робоча заміна — `RegexRequestMatcher.regexMatcher(HttpMethod.POST, "/api/v1/auth/login")` |
 | `ObjectMapper` для ручного `ProblemDetail` (слайди 90-92) | У Spring Boot 4.1 автоконфігурований `ObjectMapper` застосунку — це вже Jackson 3 (`tools.jackson.databind.ObjectMapper`), а не класичний `com.fasterxml.jackson.databind.ObjectMapper` зі слайдів. Класичний Jackson сам по собі тягнеться лише транзитивно через `jjwt-jackson` і лише в `runtime`-області. **Але**: офіційний приклад додає `spring-boot-starter-jackson` і власний бін `JacksonConfig { ObjectMapper objectMapper() { return new ObjectMapper(); } }`, а в нашому проєкті вже є `springdoc-openapi` з №5 — вона сама тягне класичний `jackson-databind` у `compile`-області (Maven nearest-wins). Тобто класичний підхід лектора в нашому проєкті теж компілюється і працює — контракт нижче перейшов на нього для максимальної відповідності прикладу |
 | `.setProperty("instance", ...)` у `ProblemDetail` (так само в офіційному прикладі лектора) | Дає **вкладений** `"properties":{"instance":"..."}`, а не плаский `"instance":"..."` top-level поле, якщо `ObjectMapper` — ручний (не автоконфігурований Boot'ом, як у нашому `JacksonConfig`). Правильно — викликати власний метод `ProblemDetail.setInstance(URI.create(...))`, він серіалізується пласким полем незалежно від того, який `ObjectMapper` активний. Це баг навіть у коді самого лектора — у контракті виправлено |
-| `@WebMvcTest` + Spring Security (слайд 96) | У Boot 4.1 модульні тестові jar-и **не** підключають Spring Security до `MockMvc` автоматично. Треба самому зібрати `MockMvc`: `MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build()` у `@BeforeEach`, через `@Autowired WebApplicationContext` |
+| `@WebMvcTest` + Spring Security (слайд 96) | Spring Security підключається до автоін'єктованого `MockMvc` **лише** з залежністю `spring-boot-starter-security-test` (слайд 53 лекції 7: «стартер підключає Spring Security до MockMvc»). З голою `spring-security-test` цього не відбувається, і `MockMvc` довелося б збирати вручну (`MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build()`). Беремо стартер — ручна збірка не потрібна |
 | `@MockitoBean` на самому класі `JwtAuthenticationFilter` | **Тиха помилка**: мок фільтра не викликає `filterChain.doFilter(...)`, увесь запит обривається, тест бачить `200` без жодного винятку. Мокати треба лише залежності фільтра (`JwtValidatorService`, `UserDetailsService`), а сам фільтр — імпортувати як є |
-| `@Component`-фільтр (`JwtAuthenticationFilter`) у довільному `@WebMvcTest` | Автоматично підхоплюється в будь-якому `@WebMvcTest`-зрізі проєкту (на відміну від `@Service`/`@Repository`) і провалює створення контексту, якщо його залежності нема чим задовольнити. Кожен наявний `@WebMvcTest` (контролери з №2-№5) після злиття бази **зламається**, якщо не додати туди `@MockitoBean` на `JwtValidatorService` і `UserDetailsService` |
+| `@Component`-фільтр (`JwtAuthenticationFilter`) у довільному `@WebMvcTest` | Автоматично підхоплюється в будь-якому `@WebMvcTest`-зрізі проєкту (на відміну від `@Service`/`@Repository`) і провалює створення контексту, якщо його залежності нема чим задовольнити. Кожен наявний `@WebMvcTest` (контролери з №2-№5) після злиття бази **зламається**, якщо не виключити фільтр із зрізу (`excludeFilters`) або не замокати його залежності. А коли в `pom.xml` є `spring-boot-starter-security-test`, у зрізі діє ще й стандартна безпека Spring Boot («усе вимагає входу»): тест, що бачив `200`, бачить **`401`**. Лікує обидві проблеми `@AutoConfigureMockMvc(addFilters = false)` + `excludeFilters` (слайди 19-20 лекції 8) |
 | `AuthenticationManager` як бін | У сучасному Spring Security не піднімається автоматично для `@Autowired`; треба явно `@Bean AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) { return cfg.getAuthenticationManager(); }` |
 | Перевірка вручну (curl) одразу після "Started..." у логах | Spring Boot друкує рядок `Started XApplication in N seconds` **до** того, як виконає `ApplicationRunner`-и (`DemoUsers` тощо) — тільки після нього. Скрипт/curl, запущений одразу по цьому рядку, може «не бачити» ще не створених демо-користувачів і дати хибний `401`. Чекати варто на власний лог-маркер з самого `ApplicationRunner`, а не на "Started" |
 | Повний сценарій: без токена → логін → `Bearer` → чужа роль, з усіма виправленнями вище | Усі чотири статуси (`401`/`200`(токен)/`200`/`403`) відтворені реальними запитами, обидва `ProblemDetail` (401 і 403) — плаский `instance`, без зайвого `"properties":null` (додано `setSerializationInclusion(NON_NULL)` у `JacksonConfig`, як і в контракті №2) |
@@ -55,7 +55,7 @@
 
 | Крок | Що зробити |
 |------|-----------|
-| 1 | `pom.xml`: `spring-boot-starter-security`, `jjwt-api`/`jjwt-impl`/`jjwt-jackson` (версія `0.12.6`), `org.bouncycastle:bcprov-jdk18on` (без неї `Argon2PasswordEncoder` падає — розділ 2) |
+| 1 | `pom.xml`: `spring-boot-starter-security`, `jjwt-api`/`jjwt-impl`/`jjwt-jackson` (версія `0.12.6`), `org.bouncycastle:bcprov-jdk18on` (без неї `Argon2PasswordEncoder` падає — розділ 2), у `test`: `spring-boot-starter-security-test` (для `@WithMockUser`; саме стартер, не голе `spring-security-test` — розділ 2) |
 | 2 | `AppRole` — enum `DONOR, VOLUNTEER, COORDINATOR, ADMIN` (ролі з ТЗ, розділ 3) |
 | 3 | `AppUser` — `@Entity implements UserDetails`, поля `id (UUID)`, `username`, `password`, `role`, `enabled` |
 | 4 | `UserRepository extends ListCrudRepository<AppUser, UUID>` з `findByUsername`, `existsByUsername` |
@@ -265,63 +265,64 @@ public class JwtLoginFilter extends UsernamePasswordAuthenticationFilter {
 
 Методи лише читання (`findAll`, `getById`, `getHistory` тощо) нічим не позначаємо — досить загального `anyRequest().authenticated()` з бази: будь-який залогінений користувач може читати.
 
-### 5.2. Обов'язкове виправлення наявних `@WebMvcTest` (перевірено — без нього тести не збираються)
+### 5.2. Обов'язкове виправлення наявних `@WebMvcTest` (перевірено — без нього тести не збираються або дають `401`)
 
-Як тільки база злита в `main`, у **кожному** наявному `@WebMvcTest` (з №2-№5, для своїх контролерів) треба додати три поля — інакше тест впаде ще на етапі підняття контексту (розділ 2):
+Як тільки база злита в `main`, у **кожному** наявному `@WebMvcTest` (з №2-№5, для своїх контролерів) треба зробити таку правку, інакше тест упаде ще на етапі підняття контексту (розділ 2) або побачить `401`:
 
 ```java
-@MockitoBean
-private JwtValidatorService jwtValidatorService;
-
-@MockitoBean
-private UserDetailsService userDetailsService;
-
-@MockitoBean
-private AuthenticationEntryPoint authenticationEntryPoint;
+@WebMvcTest(controllers = LotController.class,
+        excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = JwtAuthenticationFilter.class))
+@AutoConfigureMockMvc(addFilters = false)
+class LotControllerTest {
+    ...
+}
 ```
 
-Більше нічого в цих тестах міняти не треба: без `@Import(SecurityConfig.class)` і без ручної збірки `MockMvc` вони й далі бачать ті самі статуси, що й раніше (перевірено).
+`excludeFilters` прибирає з зрізу `@Component`-фільтр, тож `@MockitoBean` на його залежності (`JwtValidatorService`, `UserDetailsService`, `AuthenticationEntryPoint`) більше не потрібні; `addFilters = false` вимикає ланцюг безпеки в зрізі. Це підхід зі слайдів 19-20 лекції 8. Варіант «три `@MockitoBean` + `addFilters = false`» теж працює (перевірено), але краще один спільний спосіб для всіх.
+
+Більше нічого в цих тестах міняти не треба; права перевіряються окремими тестами з розділу 5.3 та інтеграційними тестами.
 
 ### 5.3. Новий тест на авторизацію — по одному на людину
 
 ```java
 @WebMvcTest(LotController.class)
-@Import({SecurityConfig.class, ProblemDetailAuthenticationEntryPoint.class,
-         ProblemDetailAccessDeniedHandler.class, JwtAuthenticationFilter.class})
+@Import({SecurityConfig.class, JacksonConfig.class, ProblemDetailAuthenticationEntryPoint.class,
+         ProblemDetailAccessDeniedHandler.class, JwtAuthenticationFilter.class, LotService.class})
 class LotControllerSecurityTest {
 
-    @Autowired WebApplicationContext context;
-    MockMvc mockMvc;
+    @Autowired MockMvc mvc;
 
+    @MockitoBean JwtService jwtService;
     @MockitoBean JwtValidatorService jwtValidatorService;
     @MockitoBean UserDetailsService userDetailsService;
-    @MockitoBean LotService lotService;
-
-    @BeforeEach
-    void setUp() {
-        mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
-    }
+    @MockitoBean LotRepository lotRepository;
 
     @Test
     void create_WhenAnonymous_ShouldReturnUnauthorized() throws Exception {
-        mockMvc.perform(post("/api/v1/lots")...).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/lots")...).andExpect(status().isUnauthorized());
     }
 
     @Test
     @WithMockUser(roles = "VOLUNTEER")
     void create_WhenWrongRole_ShouldReturnForbidden() throws Exception {
-        mockMvc.perform(post("/api/v1/lots")...).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/lots")...).andExpect(status().isForbidden());
     }
 
     @Test
     @WithMockUser(roles = "DONOR")
     void create_WhenDonorRole_ShouldReturnCreated() throws Exception {
-        mockMvc.perform(post("/api/v1/lots")...).andExpect(status().isCreated());
+        given(lotRepository.save(any())).willAnswer(invocation -> invocation.getArgument(0));
+        mvc.perform(post("/api/v1/lots")...).andExpect(status().isCreated());
     }
 }
 ```
 
-Шаблон перевірений — три сценарії саме в такому вигляді пройшли на прототипі (розділ 2). `@Import` обов'язково включає `JwtAuthenticationFilter.class` поряд із `SecurityConfig.class` — інакше `HttpSecurity`-бін не піднімається в зрізі (перевірено).
+Шаблон перевірений — три сценарії саме в такому вигляді пройшли. Дві речі, без яких він не працює:
+
+- **Сервіс не мокаємо, а імпортуємо** (`LotService.class` в `@Import`), мокаємо його залежності (тут — репозиторій). `@PreAuthorize` діє лише через проксі Spring, тож на `@MockitoBean`-сервісі «чужа роль» повернула б `201`, а не `403` (слайд 9 лекції 8: «без проксі Spring анотації `@PreAuthorize` не діють»).
+- `@Import` включає `JwtAuthenticationFilter.class` поряд із `SecurityConfig.class` — інакше `HttpSecurity`-бін не піднімається в зрізі.
+
+`MockMvc` автоін'єктований: збирати його вручну через `springSecurity()` не треба, бо в `pom.xml` є `spring-boot-starter-security-test`.
 
 ---
 
@@ -414,7 +415,7 @@ npx newman run postman/food-rescue-collection.json -e postman/food-rescue-enviro
 
 | Ризик | Що робити |
 |-------|-----------|
-| Усі наявні `@WebMvcTest` червоніють одразу після злиття бази | Очікувано (розділ 2, 5.2) — додати три `@MockitoBean` в кожен (розділ 5.2), нічого більше не міняти |
+| Усі наявні `@WebMvcTest` червоніють одразу після злиття бази (контекст не піднімається або `401`) | Очікувано (розділ 2, 5.2) — додати `excludeFilters` і `@AutoConfigureMockMvc(addFilters = false)` в кожен, нічого більше не міняти |
 | Postman-колекція з №5 раптом усюди 401 | Додати крок логіну на початок (розділ 6) — без цього й раніше зелена колекція тепер провалиться |
 | `Argon2PasswordEncoder` падає при старті з `NoClassDefFoundError` | Забули `bcprov-jdk18on` у `pom.xml` (розділ 2, 3 крок 1) |
 | У логах чи в токені — пароль, персональні дані | Заборонено (слайд 60, 106); у payload JWT — лише `username` і ролі |

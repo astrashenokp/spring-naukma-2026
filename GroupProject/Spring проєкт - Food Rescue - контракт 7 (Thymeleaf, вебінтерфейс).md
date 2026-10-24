@@ -1,6 +1,6 @@
 # Food Rescue — контракт №7: Thymeleaf і вебінтерфейс
 
-> **Актуальний контракт** (останній). Попередні №3-№6 лишаються чинними для своїх частин, але цей документ має пріоритет там, де вони розходяться (єдиний `SecurityFilterChain` з №6 тут розділяється на два).
+> Замінено контрактом №8 (інтеграційне та E2E тестування) як останнім. Цей документ лишається чинним для вебсторінок і двох ланцюгів безпеки (єдиний `SecurityFilterChain` з №6 тут розділяється на два); шаблони з нього отримують `<label for>` і `role="alert"` за №8.
 
 Групове завдання лекції 7 (Web: Thymeleaf і SPA). Тут записано **лише те, що вимагає викладач**, і те, що технічно потрібно, щоб це працювало. Усе, що не згадане нижче, не робимо.
 
@@ -43,8 +43,8 @@
 | Валідація | Некоректні дані → повторний показ форми (`200`, без редіректу) з повідомленнями під полями; успіх → `302` на список |
 | Апостроф у повідомленні валідації | Звичайний `'` у `@NotBlank(message = "...обов'язковою")` **зникає** з виводу (Hibernate Validator проганяє рядок через `MessageFormat`, де `'` — спецсимвол). Писати `’` (U+2019): `"Назва є обов’язковою"` |
 | Spring Modulith | `ApplicationModules.verify()` зелений, коли вебконтролер лежить у підпакеті модуля (`lot.web`), а `common` лишається без підпакетів. Контролер звертається лише до `LotService` свого модуля |
-| Наявні REST `@WebMvcTest` після додавання Thymeleaf | Проходять без змін із трьома `@MockitoBean` з №6 (`JwtValidatorService`, `UserDetailsService`, `AuthenticationEntryPoint`) |
-| `@WebMvcTest` для вебконтролера з безпекою | Потрібен ручний `MockMvc` із `springSecurity()` (як у №6) і **чотири** мокі: `JwtService`, `JwtValidatorService`, `UserDetailsService` + сервіс модуля, бо `SecurityConfig` приймає `JwtService` для `apiFilterChain`. У `MockMvc` редірект на вхід — відносний: `redirectedUrl("/login")`, не `**/login` |
+| Наявні REST `@WebMvcTest` після додавання Thymeleaf | Проходять із правкою з №6 (розділ 5.2: `excludeFilters` + `@AutoConfigureMockMvc(addFilters = false)`) без жодних додаткових змін |
+| `@WebMvcTest` для вебконтролера з безпекою | `MockMvc` автоін'єктований (у `pom.xml` є `spring-boot-starter-security-test` з №6, ручна збірка не потрібна). Мокаємо **чотири** біни: `JwtService`, `JwtValidatorService`, `UserDetailsService` + сервіс модуля, бо `SecurityConfig` приймає `JwtService` для `apiFilterChain`. У `MockMvc` редірект на вхід — відносний: `redirectedUrl("/login")`, не `**/login` |
 | `JwtLoginFilter` з №6 | `unsuccessfulAuthentication` має оголошувати `throws IOException, ServletException`, бо `AuthenticationEntryPoint.commence` кидає обидва (приклад у №6 виправлено) |
 
 ---
@@ -194,7 +194,7 @@ spring.web.resources.chain.cache=true
 
 ### 5.2. Наявні тести не чіпаємо
 
-REST `@WebMvcTest` з №6 далі проходять із трьома `@MockitoBean`, нічого додавати не треба (перевірено).
+REST `@WebMvcTest` з №6 (з правкою з розділу 5.2 контракту №6 — `excludeFilters` та `addFilters = false`) далі проходять, нічого додавати не треба (перевірено).
 
 ### 5.3. Новий тест безпеки сторінки — по одному на людину
 
@@ -204,18 +204,12 @@ REST `@WebMvcTest` з №6 далі проходять із трьома `@Mocki
          ProblemDetailAccessDeniedHandler.class, JwtAuthenticationFilter.class})
 class LotWebControllerSecurityTest {
 
-    @Autowired WebApplicationContext context;
-    MockMvc mvc;
+    @Autowired MockMvc mvc;
 
     @MockitoBean JwtService jwtService;
     @MockitoBean JwtValidatorService jwtValidatorService;
     @MockitoBean UserDetailsService userDetailsService;
     @MockitoBean LotService lotService;
-
-    @BeforeEach
-    void setUp() {
-        mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
-    }
 
     @Test
     void anonymousIsRedirectedToLogin() throws Exception {
@@ -321,7 +315,7 @@ curl -i -H "Accept: text/html" http://localhost:8080/nope
 | Сторінки помилок не показуються, приходить JSON | Перевіряти з `Accept: text/html` або в браузері (розділ 2) |
 | У повідомленні валідації зникає апостроф | Писати `’`, не `'` (розділ 2, 5.1) |
 | Форма повертає `403` навіть для правильної ролі | Забули `th:action` — токен `_csrf` не додався (слайд 39) |
-| Тест вебконтролера не бачить авторизації або падає на `JwtService` | Збирати `MockMvc` вручну й мокати чотири біни (розділ 2, 5.3) |
+| Тест вебконтролера падає на `JwtService`, або безпека в ньому «не діє» | Замокати чотири біни (розділ 2, 5.3); у `pom.xml` має бути `spring-boot-starter-security-test`, не голе `spring-security-test` |
 | Тест безпеки не проходить, бо очікує `**/login` | У `MockMvc` редірект відносний: `redirectedUrl("/login")` |
 | `JwtLoginFilter` не компілюється (`unreported exception ServletException`) | `unsuccessfulAuthentication ... throws IOException, ServletException` (виправлено в №6) |
 | Дві людини правлять `layout.html` і `SecurityConfig` | Не мають: усі три посилання вже у `nav`, права — у `@PreAuthorize` на сервісі |
