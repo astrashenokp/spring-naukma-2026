@@ -1,12 +1,14 @@
 # Food Rescue — контракт №8: інтеграційне та end-to-end тестування
 
-> **Актуальний контракт** (останній). Попередні №3-№7 лишаються чинними для своїх частин, але цей документ має пріоритет там, де вони розходяться.
+> Замінено контрактом №9 (розгортання) як останнім. Цей документ лишається чинним для тестів і для зауважень та критеріїв викладача (розділи 1.1-1.3), які діють на весь проєкт.
 
 Групове завдання лекції 8 (інтеграційне та end-to-end тестування). Тут записано **лише те, що вимагає викладач**, і те, що технічно потрібно, щоб це працювало. Усе, що не згадане нижче, не робимо.
 
 **Вихідна точка — код, зроблений за контрактом №7 і злитий у `main`.** Робочий код майже не змінюється: це завдання про тести. Єдине нове в `src/main` — один вихідний HTTP-виклик (розділ 5, Людина 3) і дві властивості; без нього нічого замінювати заглушкою WireMock.
 
 > Лектор сказав, що приклад до завдання відкриє на distedu. Перед стартом перевірити, чи він уже є. **Дедлайн групового — середа, 28.10.2026, 23:59.**
+>
+> Окрім слайдів, у контракт включено **зауваження й критерії оцінювання проєкту від викладача** (розділи 1.1-1.3): вони стосуються всього коду, тож тести пишемо так, щоб їх не порушити.
 
 ---
 
@@ -26,6 +28,41 @@
 | G10 | Архів проєкту без `target` | слайд 70, п. 3 |
 
 Уточнення лектора усно: тести на CRUD обов'язкові; основну логіку покрити інтеграційними; `RestTestClient` — для основних сценаріїв; Playwright — для входу й однієї основної дії користувача (2-3 сценарії); E2E відокремити від решти, «як вам подобається».
+
+### 1.1. Зауваження викладача (з distedu)
+
+**Зауваження:**
+- не варто вимикати CSRF-захист при роботі з сесіями;
+- не варто брати `withDefaultPasswordEncoder()`;
+- не варто брати `{noop}`.
+
+**Загальні зауваження** (остання зміна — середа, 14 жовтня 2026, 16:49):
+- треба забирати заголовок `X-Trace-Id` **в першу чергу** і лише якщо його немає — генерувати.
+
+### 1.2. Критерії оцінювання проєкту (з distedu)
+
+1. **Чистота коду.** 0 зауважень рівня Blocker і Critical за результатами плагіна SonarQube for IDE; єдиний стиль коду в усій кодовій базі; жодного «мертвого коду» (невикористані імпорти, змінні, методи) та закоментованих блоків; принцип DRY — без дублювання бізнес-логіки; жодних захардкоджених секретів, ключів API та паролів (усі конфігурації — у файлах налаштувань або змінних середовища).
+2. **UI/UX клієнтської частини та Live Demo.** Повноцінно працездатний веб-інтерфейс (Thymeleaf або SPA); логічний і зрозумілий інтерфейс: коректне відображення даних, зрозумілі повідомлення про помилки валідації; безпомилковий Live Demo під час захисту (застосунок стабільно запускається й виконує бізнес-сценарії без збоїв).
+3. **Функціонал і коректність.** Реалізація заявлених командою бізнес-сценаріїв і вимог, пояснення відмінностей від початкового плану; валідація вхідних даних (Jakarta Bean Validation: `@NotNull`, `@Size`, `@Pattern` тощо) для всіх операцій створення й оновлення; глобальний обробник винятків (`@RestControllerAdvice`) повертає стандартизовані зрозумілі відповіді з HTTP-статусами 400, 404, 409, 422 і **ніколи не видає необроблених 500**.
+4. **Шари.** Проєкт на Spring Modulith; сувора шарувата архітектура: контролери — тонкі класи (маршрутизація HTTP, валідація вхідних DTO, формування відповіді); сервіси — вся бізнес-логіка; репозиторії — доступ до БД через інтерфейси Spring Data; **категорична заборона прямого звернення з контролера до репозиторію**, повз сервіс; DTO для передачі даних через межі шарів: сутності БД (`@Entity`) не потрапляють безпосередньо в контролери та зовнішнє API.
+5. **Покриття тестами.** Модульні тести на JUnit 5 + Mockito для ізольованої перевірки бізнес-логіки сервісів; інтеграційні тести REST-контролерів і роботи з БД (MockMvc, Testcontainers або зрізові `@WebMvcTest`, `@DataJpaTest`); покриття успішних сценаріїв і граничних та негативних випадків (некоректні дані, дублювання унікальних полів); усі тести проходять.
+6. **Обов'язкове впровадження функціоналу з тем курсу** — текст пункту на скриншоті обрізано. **Уточнити повне формулювання на distedu** до старту й дописати сюди.
+
+### 1.3. Що це означає для нас
+
+| Вимога | Стан у проєкті | Що робимо |
+|--------|----------------|-----------|
+| CSRF при сесіях | Ланцюг сторінок (№7) має CSRF **увімкненим**; вимкнений він лише в stateless-ланцюгу `/api/**` з JWT, де сесії немає | Нічого не міняємо. У ланцюг сторінок `csrf.disable()` **не додавати**; тести форм ідуть із `csrf()` |
+| `withDefaultPasswordEncoder()`, `{noop}` | Паролі кодує `Argon2PasswordEncoder` (№6) | У тестах користувачів із `{noop}` чи `withDefaultPasswordEncoder()` **не створюємо**: входимо демо-користувачами з БД (їх створює `DemoUsers` через справжній `PasswordEncoder`) |
+| `X-Trace-Id` першим | Контракт №5 описує `TraceIdFilter` без явного кроку «взяти заголовок із запиту» | База, крок 4: перевірити фільтр і додати `TraceIdIntegrationTest` (розділ 4.9) |
+| Жодних захардкоджених паролів | У `DemoUsers` (№6) паролі демо-акаунтів записані в коді; у тестах і Postman-колекції — теж | База, кроки 2-3: паролі — у `application.properties`, `DemoUsers` і тести беруть їх звідти (розділ 4.8). JWT-секрет уже у властивості з перевизначенням змінною `JWT_SECRET` (№6) |
+| 0 Blocker/Critical у SonarQube for IDE, єдиний стиль, мертвий код, коментарі | — | Перед здачею кожен прогоняє плагін по своїх папках `src/main` і `src/test` (розділ 8, п. 7). Тест-код у критерій теж входить |
+| DRY | — | Спільні дії в базі: `BrowserTestSupport.loginAs`, `ApiE2ESupport.login`, спільні анотації (розділи 4.4, 4.6, 4.7); у класах треків їх не копіюємо |
+| Валідація на create/update, 400/404/409/422, жодного 500 | Мапінг статусів — у `GlobalExceptionHandler` з №2 | Кожен CRUD-тест містить негативні випадки з матриці розділу 5 і перевіряє **конкретний код**, не «будь-яку помилку» |
+| Spring Modulith, шари, DTO | `ModulesTest` з №3; контролери ходять у сервіси | Розділ 8, п. 7: команда `grep` для «контролер → репозиторій»; у CRUD-тестах перевіряємо поля JSON-відповіді (DTO), не сутність |
+| Покриття тестами: модульні + інтеграційні, happy path + негативні | Модульні — з №3, інтеграційні — це завдання | Розділ 5: у кожному треку happy path, негативні, чужа роль, дублікати унікальних полів (де вони є) |
+| Live Demo без збоїв | — | Сценарії Playwright (G7) — це й репетиція демо; перед захистом прогнати `./mvnw verify` і пройти вручну сторінки трьох ролей на свіжому запуску |
+| Пояснення відмінностей від початкового плану | — | Готуємо до захисту: кожен виписує, чим його частина відрізняється від ТЗ/контракту, і чому |
 
 ---
 
@@ -52,7 +89,11 @@
 | Playwright | Перший `Playwright.create()` **сам завантажує Chromium** (перший прогін ~1,5 хв, потрібен інтернет), далі ~10 с на клас. Окремої команди встановлення локально не треба |
 | Локатори Playwright | `getByLabel(...)` знаходить поле лише коли в шаблоні є `<label for="...">`; `AriaRole.ALERT` — лише коли повідомлення має `role="alert"`; `AriaRole.ROW` працює на `<tr>`. Шаблони з №7 (`login`, форми) без цього **не підходять** — розділ 3, крок 7 |
 | Trace | `context.tracing().start(...)` / `stop(path)` створює `target/playwright/trace-*.zip` для кожного тесту; відкривається `npx playwright show-trace <файл>` |
-| Повний прогін | `./mvnw test`: 18 тестів зелені; `./mvnw verify`: ті самі 18 + 7 `*E2EIT` зелені, `BUILD SUCCESS` |
+| `X-Trace-Id` | `TraceIdFilter` (код з Lab05: заголовок із запиту першим, `UUID` лише за відсутності) у повному контексті: запит із `X-Trace-Id: trace-from-client` повертає той самий заголовок; без нього — валідний `UUID` (2 тести `@IntegrationTest`) |
+| Демо-паролі у налаштуваннях | `@ConfigurationProperties(prefix = "foodrescue.demo")` з `Map<String, String> passwords` + рядки `foodrescue.demo.passwords.donor1=...`: `DemoUsers` створює акаунти, вхід у MockMvc-, REST- і браузерних тестах працює; у `*.java` жодного літерала пароля (`grep -rn "pass1" src --include="*.java"` — порожньо). У тестах пароль береться через `@Value("${foodrescue.demo.passwords.donor1}")` |
+| Спільні хелпери входу | `loginAs` у `BrowserTestSupport` (слайд 54) і `login` в абстрактному `ApiE2ESupport` (поле `@Autowired RestTestClient`, успадковується класом з `@E2ETest`) — дублювання зникає, 7 `*E2EIT` далі зелені |
+| «Контролер → репозиторій» | `grep -rln "Repository" src/main/java --include="*Controller.java"` — порожній вивід, коли контролери працюють лише з сервісами |
+| Повний прогін | `./mvnw test`: 20 тестів зелені; `./mvnw verify`: ті самі 20 + 7 `*E2EIT` зелені, `BUILD SUCCESS` |
 
 ---
 
@@ -63,15 +104,17 @@
 | Крок | Що зробити |
 |------|-----------|
 | 1 | `pom.xml` — залежності й Failsafe (розділ 4.1). Запустити Docker Desktop |
-| 2 | `application.properties`: `foodrescue.alerts.url=http://localhost:9999/alerts`, `foodrescue.alerts.timeout=2s` (адреса вигадана: у робочому режимі вихідний виклик нікуди не дійде — помилку ловить слухач, розділ 5) |
-| 3 | `src/test/.../TestcontainersConfiguration` (розділ 4.2) |
-| 4 | `src/test/.../AlertsStubConfiguration` — WireMock як бін контексту (розділ 4.3) |
-| 5 | Спільні анотації `@IntegrationTest` і `@E2ETest` (розділ 4.4) |
-| 6 | Три скрипти очищення в `src/test/resources/sql/`: `reset-delivery.sql`, `reset-volunteer.sql`, `reset-lot.sql`, у кожному поки що `select 1;` (розділ 4.5). Кожну таблицю потім заповнює її власник |
-| 7 | Шаблони з №7: до `login.html` і форм додати `<label for="...">` до кожного поля, а повідомлення про помилки (вхід, валідація) — `role="alert"` (розділ 2, «Локатори Playwright»). Це правка шаблонів Людини 1; шаблони Людини 2 і 3 вони роблять самі за тим самим правилом |
-| 8 | `BrowserTestSupport` (розділ 4.6) |
-| 9 | Зелений `./mvnw test` на порожній базі тестів; наявні `@DataJpaTest` не змінювати |
-| 10 | README: скелет розділу «Тестування» (розділ 7) |
+| 2 | `application.properties`: `foodrescue.alerts.url=http://localhost:9999/alerts`, `foodrescue.alerts.timeout=2s` (адреса вигадана: у робочому режимі вихідний виклик нікуди не дійде — помилку ловить слухач, розділ 5.1) і `foodrescue.demo.passwords.<username>=<пароль>` для кожного демо-акаунта з №6 |
+| 3 | `DemoProperties` + `DemoUsers`: паролі беруться з налаштувань, у коді літералів немає (розділ 4.8) |
+| 4 | `TraceIdFilter`: спершу `X-Trace-Id` із запиту, генерація лише за відсутності чи порожнього значення; `TraceIdIntegrationTest` (розділ 4.9) |
+| 5 | `src/test/.../TestcontainersConfiguration` (розділ 4.2) |
+| 6 | `src/test/.../AlertsStubConfiguration` — WireMock як бін контексту (розділ 4.3) |
+| 7 | Спільні анотації `@IntegrationTest` і `@E2ETest` (розділ 4.4) |
+| 8 | Три скрипти очищення в `src/test/resources/sql/`: `reset-delivery.sql`, `reset-volunteer.sql`, `reset-lot.sql`, у кожному поки що `select 1;` (розділ 4.5). Кожну таблицю потім заповнює її власник |
+| 9 | Шаблони з №7: до `login.html` і форм додати `<label for="...">` до кожного поля, а повідомлення про помилки (вхід, валідація) — `role="alert"` (розділ 2, «Локатори Playwright»). Це правка шаблонів Людини 1; шаблони Людини 2 і 3 вони роблять самі за тим самим правилом |
+| 10 | `BrowserTestSupport` (з `loginAs`) і `ApiE2ESupport` (з `login`) — розділи 4.6, 4.7 |
+| 11 | Зелений `./mvnw test`; наявні `@DataJpaTest` не змінювати |
+| 12 | README: скелет розділу «Тестування» (розділ 7) |
 
 **Готово, коли:** `./mvnw test` зелений; `./mvnw verify` зелений; Docker Desktop у списку процесів, а в журналі видно рядок `Container postgres:17-alpine started`.
 
@@ -213,6 +256,13 @@ public abstract class BrowserTestSupport {
         context.close();
     }
 
+    protected void loginAs(String username, String password) {
+        page.navigate("/login");
+        page.getByLabel("Ім’я користувача").fill(username);
+        page.getByLabel("Пароль").fill(password);
+        page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Увійти")).click();
+    }
+
     @AfterAll
     static void closeBrowser() {
         playwright.close();
@@ -222,21 +272,179 @@ public abstract class BrowserTestSupport {
 
 Один браузер на клас, новий `BrowserContext` (свої куки й сесія) на кожен тест, відносні адреси (`page.navigate("/login")`) завдяки базовій адресі з `@LocalServerPort`.
 
+Спільна дія входу `loginAs` живе тут (слайд 54), а не в кожному Page Object: інакше три копії (критерій DRY).
+
+### 4.7. `ApiE2ESupport`
+
+```java
+public abstract class ApiE2ESupport {
+
+    @Autowired protected RestTestClient client;
+
+    protected String login(String username, String password) {
+        return client.post().uri("/api/v1/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("username", username, "password", password))
+                .exchange()
+                .expectStatus().isOk()
+                .returnResult(Map.class)
+                .getResponseBody()
+                .get("accessToken").toString();
+    }
+}
+```
+
+Класи `*ApiE2EIT` успадковують його й мають лише `@E2ETest`.
+
+### 4.8. Демо-паролі — у налаштуваннях, не в коді
+
+```properties
+foodrescue.demo.passwords.donor1=donorpass1
+foodrescue.demo.passwords.volunteer1=volunteerpass1
+foodrescue.demo.passwords.admin1=adminpass1
+```
+
+```java
+@ConfigurationProperties(prefix = "foodrescue.demo")
+public record DemoProperties(Map<String, String> passwords) {
+}
+```
+
+```java
+@Component
+@EnableConfigurationProperties(DemoProperties.class)
+public class DemoUsers implements ApplicationRunner {
+
+    // конструктор: UserRepository, PasswordEncoder, DemoProperties
+
+    private void add(String id, String username, AppRole role) {
+        if (!repo.existsByUsername(username)) {
+            repo.save(new AppUser(UUID.fromString(id), username, enc.encode(demo.passwords().get(username)), role));
+        }
+    }
+}
+```
+
+У тестах: `@Value("${foodrescue.demo.passwords.donor1}") String donorPassword;`. Імена акаунтів і пароль для кожної ролі (включно з координатором) — за таблицею з №6; додати по рядку на кожен акаунт. Postman-колекція й README посилаються на ці значення з налаштувань, а не дублюють їх у коді.
+
+### 4.9. `X-Trace-Id`: заголовок із запиту першим
+
+У `TraceIdFilter.doFilterInternal`:
+
+```java
+String traceId = request.getHeader(traceHeader);
+if (traceId == null || traceId.isBlank()) {
+    traceId = UUID.randomUUID().toString();
+}
+```
+
+```java
+@IntegrationTest
+class TraceIdIntegrationTest {
+
+    @Autowired MockMvc mockMvc;
+
+    @Test
+    @WithMockUser
+    void request_WithTraceIdHeader_ShouldKeepIt() throws Exception {
+        String header = mockMvc.perform(get("/api/v1/lots").header("X-Trace-Id", "trace-from-client"))
+                .andReturn().getResponse().getHeader("X-Trace-Id");
+
+        assertThat(header).isEqualTo("trace-from-client");
+    }
+
+    @Test
+    @WithMockUser
+    void request_WithoutTraceIdHeader_ShouldGenerateUuid() throws Exception {
+        String header = mockMvc.perform(get("/api/v1/lots"))
+                .andReturn().getResponse().getHeader("X-Trace-Id");
+
+        assertThat(UUID.fromString(header)).isNotNull();
+    }
+}
+```
+
+Клас лежить у `src/test/.../common/` і належить Людині 1.
+
 ---
 
 ## 5. Треки по людях — кожен тестує свій модуль
 
 Усі три працюють паралельно, ніхто нікого не чекає: тестові дані кожен готує сам через REST-виклики наявних ендпоінтів (як у №2-№6) або `INSERT`, і ніщо не залежить від тестів інших. Назви класів: `…IntegrationTest` (запускає `test`), `…E2EIT` (запускає `verify`).
 
+### Структура тестів по папках
+
+```
+src/test/java/com/example/foodrescue/
+├── TestcontainersConfiguration.java      ┐
+├── AlertsStubConfiguration.java          │
+├── IntegrationTest.java, E2ETest.java    │ база — Людина 1
+├── BrowserTestSupport.java               │
+├── ApiE2ESupport.java                    ┘
+├── ModulesTest.java                        з №3
+├── common/
+│   └── TraceIdIntegrationTest.java         Людина 1
+├── lot/                                    Людина 1
+│   ├── LotCrudIntegrationTest.java
+│   ├── LotFormIntegrationTest.java
+│   ├── LotApiE2EIT.java
+│   ├── LotUiE2EIT.java
+│   └── LotPages.java
+├── volunteer/                              Людина 2
+│   ├── VolunteerCrudIntegrationTest.java
+│   ├── ReservationIntegrationTest.java
+│   ├── ReservationApiE2EIT.java
+│   ├── ReservationUiE2EIT.java
+│   └── ReservationPages.java
+└── delivery/                               Людина 3
+    ├── DestinationPointCrudIntegrationTest.java
+    ├── DeliveryFlowIntegrationTest.java
+    ├── DeliveryAlertIntegrationTest.java
+    ├── DeliveryFlowE2EIT.java
+    ├── DestinationPointUiE2EIT.java
+    └── DestinationPointPages.java
+
+src/test/resources/sql/
+├── reset-lot.sql                           Людина 1
+├── reset-volunteer.sql                     Людина 2
+└── reset-delivery.sql                      Людина 3
+```
+
+Кожен пише **лише у своїй папці** і у своєму `reset-*.sql` — тож конфліктів злиття немає. Спільні файли (корінь тестового пакета) — лише база.
+
+### Розподіл CRUD
+
+Ендпоінти й коди відповідей — з таблиць контракту №2. Фізичного видалення в проєкті немає, окрім скасування резервування (`DELETE`), тому частину «D» покриваємо скасуванням: лот — `cancellation`, резервування — `DELETE`. Ендпоінти з позначкою «якщо встигнете» тестуємо лише тоді, коли вони реалізовані.
+
+| Сутність | Хто | Create | Read | Update / зміна стану | Delete / скасування | Негативні коди (№2) | Роль |
+|----------|-----|--------|------|----------------------|---------------------|---------------------|------|
+| Лот | Людина 1 | `POST /api/v1/lots` → 201 | `GET /lots`, `GET /lots/{id}` → 200 | `PUT /lots/{id}` → 200; `POST /lots/{id}/publication` → 200 | `POST /lots/{id}/cancellation` → 200 | POST: 400; GET за id: 404; PUT: 400, 404, 409 (лот не `DRAFT`); publication: 404, 409; cancellation: 404, 409 (з `RESERVED` і далі) | `DONOR` — створення, оновлення, публікація, скасування; читання — будь-який залогінений; `ADMIN` — `approval`, якщо реалізовано |
+| Волонтер | Людина 2 | `POST /volunteers` → 201 | `GET /volunteers/{id}` → 200 | — | — | POST: 400; GET: 404 | будь-який залогінений (№6) |
+| Резервування | Людина 2 | `POST /lots/{id}/reservation` → 201 + `Location` | — | — | `DELETE /lots/{id}/reservation` → 204 | POST: 400, 403, 404, 409 (лот не `PUBLISHED`, у т. ч. повторне резервування); DELETE: 404, 409 (лот не `RESERVED`) | `VOLUNTEER` |
+| Пункт призначення | Людина 3 | `POST /destination-points` → 201 | `GET /destination-points/{id}` → 200 | — | — | POST: 400; GET: 404 | `COORDINATOR` |
+| Доставка | Людина 3 | `POST /lots/{id}/pickup` → 200 | `GET /lots/{id}/history` → 200 | `POST /lots/{id}/delivery`, `/confirmation` → 200 | — | pickup: 400, 404, 409; delivery і confirmation: 400, 404, 409, 422; history: 404 | `VOLUNTEER` |
+
+**Правила для кожного CRUD-тесту** (критерії 3 і 5 з розділу 1.2):
+
+1. **Успішний сценарій:** код відповіді, **поля JSON-відповіді** (це DTO, не сутність) і рядок у таблиці через `JdbcClient` (значення колонок, а не лише «рядок є»).
+2. **Кожен негативний код зі свого рядка матриці:** перевіряємо **конкретний** статус і формат `ProblemDetail`, а таблиця після запиту не змінилась. Дубль там, де схема його забороняє (повторне резервування того самого лоту → 409 за №2).
+3. **Некоректний JSON → 400** (не 500, №2).
+4. **Чужа роль → 403**, запис не з'являється; **без токена → 401**.
+5. Результат читаємо з таблиці окремо від того, що його записало (слайд 63).
+
+Тести на ролі робимо для `DONOR` / `VOLUNTEER` / `COORDINATOR` / `ADMIN` через `@WithMockUser(roles = ...)`; входити за паролем у MockMvc-тестах не треба.
+
+### Решта треків (G5-G7)
+
 | | Людина 1 (`lot`) | Людина 2 (`volunteer`) | Людина 3 (`delivery`) |
 |---|---|---|---|
-| **G3, G4: MockMvc + `JdbcClient`** (`@IntegrationTest`) | CRUD лотів. `DONOR`: створити, оновити, скасувати; `VOLUNTEER` → `403`; без токена → `401`; некоректні дані → `400` і кількість рядків не змінилась. Форма `POST /lots` з `csrf()` → рядок у таблиці | Створення волонтера, резервування й скасування: `VOLUNTEER` → зміни в таблицях; `DONOR` → `403` | CRUD пунктів призначення (`COORDINATOR`; чужа роль → `403`); `pickup` → `deliver` → `confirm` (`VOLUNTEER`), статуси в таблицях |
-| **G5: WireMock** | — | — | Вихідний виклик і його тести (нижче) |
-| **G6: `RestTestClient`** (`@E2ETest`) | `LotApiE2EIT`: токен `DONOR` створює лот, `VOLUNTEER` не може | `ReservationApiE2EIT`: токен `VOLUNTEER` резервує лот | `DeliveryFlowE2EIT`: **основний сценарій** — послідовність із Postman-колекції (№5): пункт → волонтер → лот → публікація → резервування → `pickup` → `deliver` → `confirm`, кожен крок токеном своєї ролі, у кінці стан у таблицях |
-| **G7: Playwright** (`@E2ETest`, Page Object) | `LotUiE2EIT`: донор входить і створює лот через форму, бачить рядок у списку; неправильний пароль → повідомлення `role="alert"` | `ReservationUiE2EIT`: волонтер входить і резервує лот на сторінці резервувань | `DestinationPointUiE2EIT`: координатор входить і створює пункт призначення |
-| **Таблиці для `reset-*.sql`** | `reset-lot.sql` | `reset-volunteer.sql` | `reset-delivery.sql` |
+| **Форма сторінки** (`@IntegrationTest`) | `LotFormIntegrationTest`: `POST /lots` із `csrf()` → рядок у таблиці; без токена CSRF → `403`; некоректні дані → повторний показ форми (`200`) і таблиця без змін; чужа роль → `403` | — | — |
+| **G5: WireMock** | — | — | Вихідний виклик і його тести (розділ 5.1) |
+| **G6: `RestTestClient`** (`@E2ETest`, `extends ApiE2ESupport`) | `LotApiE2EIT`: токен `DONOR` створює лот, `VOLUNTEER` не може | `ReservationApiE2EIT`: токен `VOLUNTEER` резервує лот | `DeliveryFlowE2EIT`: **основний сценарій** — послідовність із Postman-колекції (№5): пункт → волонтер → лот → публікація → резервування → `pickup` → `deliver` → `confirm`, кожен крок токеном своєї ролі, у кінці стан у таблицях |
+| **G7: Playwright** (`@E2ETest`, `extends BrowserTestSupport`, Page Object) | `LotUiE2EIT`: донор входить і створює лот через форму, бачить рядок у списку; неправильний пароль → повідомлення `role="alert"` | `ReservationUiE2EIT`: волонтер входить і резервує лот на сторінці резервувань | `DestinationPointUiE2EIT`: координатор входить і створює пункт призначення |
+| **Рядки в `reset-*.sql`** | таблиці лотів | таблиці волонтерів і резервувань | таблиці пунктів і доставок |
 
-Page Object — у тому самому пакеті, що й тест: `LotPages`, `ReservationPages`, `DestinationPointPages`. Спільна дія входу — `loginAs(username, password)` (шукає поля за підписом `getByLabel`, кнопку за роллю `AriaRole.BUTTON`); локатори тільки за роллю, підписом чи текстом, не за CSS (слайд 50). Один сценарій — один тест; перевірки валідації в браузері не повторюємо (вони вже в MockMvc, слайд 64).
+Page Object — у папці свого модуля: `LotPages`, `ReservationPages`, `DestinationPointPages`. Вхід — `loginAs(...)` з `BrowserTestSupport`, у Page Object не копіюємо. Локатори тільки за роллю, підписом чи текстом, не за CSS (слайд 50). Один сценарій — один тест; перевірки валідації в браузері не повторюємо (вони вже в MockMvc, слайд 64).
 
 ### 5.1. Вихідний HTTP-виклик (G5) — Людина 3
 
@@ -339,6 +547,19 @@ public class DeliveryAlertNotifier {
 **6. Звіт і архів (G9, G10)**
 `report-tests.md` у корені; архів без `target`.
 
+**7. Критерії викладача (розділ 1.2)**
+```
+grep -rln "Repository" src/main/java --include="*Controller.java"
+grep -rn "<значення демо-пароля>" src --include="*.java"
+```
+Обидві команди дають порожній вивід (контролер ходить лише в сервіс; у `.java` немає літералів демо-паролів). SonarQube for IDE по `src/main` і `src/test`: 0 зауважень Blocker/Critical. Немає невикористаних імпортів, змінних, методів і закоментованих блоків.
+
+**8. Статуси**
+У CRUD-тестах кожної людини є кожен негативний код зі свого рядка матриці (400/404/409/422), перевірений конкретно; ніде не 500.
+
+**9. Заголовок `X-Trace-Id`**
+`TraceIdIntegrationTest` зелений: заголовок із запиту повертається незмінним, без нього — згенерований `UUID`.
+
 ---
 
 ## 9. Чого не робимо
@@ -369,6 +590,8 @@ public class DeliveryAlertNotifier {
 | Перший запуск Playwright «зависає» 1-2 хвилини | Завантажується Chromium; потрібен інтернет |
 | Два контейнери замість одного, довгий старт | Очікувано (MOCK і RANDOM_PORT — різні контексти); зайві контексти створюють різні `@MockitoBean`/`properties` у класах — не додавати (розділ 5.2) |
 | Тест залежить від порядку запуску чи демо-даних | Заборонено (розділ 4.5, 5.2); перевіряти за унікальним значенням або дельтою кількості |
+| SonarQube for IDE показує Blocker/Critical (наприклад, облікові дані як літерал, навіть у тесті) | Паролі — з налаштувань через `@Value` (розділ 4.8); решту виправити за підказкою плагіна, не вимикаючи правило |
+| Текст критерію 6 на скриншоті обрізаний | Уточнити на distedu до старту й дописати в розділ 1.2 |
 | Docker немає на машині викладача | Лектор у лекції назвав вимогу Docker «не такою критичною», бо більшість машин із цим справляються; у звіті й README вказати `docker info` як передумову |
 
 ---
